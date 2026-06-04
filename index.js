@@ -12,16 +12,16 @@ const resHeader = {
 const session = new Map();
 
 const port = 3000;
+const host = "localhost";
 const server = http.createServer();
 
-server.on("listening", () => {
+server.listen(port, host, () => {
     process.stdout.write("\n\n> Server Created\t");
     console.log(server.address());
 });
-server.listen(port);
 
 server.on("request", (req, res) => {
-    // went client enters http://localhost:3000
+    // client enters http://localhost:3000
     if (req.url === "/"){
         console.log(`\n> REQ<: Landing Page\t${req.socket.remoteAddress}\t${req.url}`);
 
@@ -30,8 +30,24 @@ server.on("request", (req, res) => {
         landingPage.pipe(res);
     }
 
-    // when client submits the form
-    else if (req.url.startsWith("/sendReq")){
+    // browser requests stylesheet
+    else if (req.url.startsWith("/style")){
+        console.log(`\n> REQ<: Stylesheet\t${req.socket.remoteAddress}\t${req.url}`);
+
+        const queryIndex = req.url.lastIndexOf('/');
+        const file = queryIndex !== -1 ? req.url.slice(queryIndex + 1) : '';
+
+        const resHeaderCSS = {
+            "Content-Type": "text/css; charset=utf-8",
+            "Transfer-Encoding": "chunked" 
+        };
+        res.writeHead(200, resHeaderCSS);
+        const landingPage = fs.createReadStream(`html/${file}`);
+        landingPage.pipe(res);
+    }
+
+    // client submits the form
+    else if (req.url.startsWith("/searchManga")){
         console.log(`\n> REQ<: Req Recieved\t${req.socket.remoteAddress}\t${req.url}`);
 
         const queryIndex = req.url.indexOf('?');
@@ -39,14 +55,41 @@ server.on("request", (req, res) => {
         const clientInput = new URLSearchParams(queryString);
 
         const mangaName = clientInput.get("name");
-        const chapterNum = clientInput.get("chapter") - 1;
 
-        if (mangaName === "" || chapterNum === "" || chapterNum < 0){
-            respond(res, 400, "400 Invalid Inputs");
+        if (mangaName === ""){
+            quickResponse(res, 400, "400 Invalid Inputs");
             return;
         }
 
-        mangaLookup(res, mangaName, chapterNum);
+        mangaLookup(res, mangaName);
+    }
+
+    else if (req.url.startsWith("/chooseManga")){
+        console.log(`\n> REQ<: Req Recieved\t${req.socket.remoteAddress}\t${req.url}`);
+
+        const queryIndex = req.url.indexOf('?');
+        const queryString = queryIndex !== -1 ? req.url.slice(queryIndex + 1) : '';
+        const clientInput = new URLSearchParams(queryString);
+
+        const mangaId = clientInput.get("mangaId");
+        const mangaName = clientInput.get("mangaName");
+        // quickResponse(res, 200, `${mangaId} ${mangaName}`)
+
+        getChapter(res, mangaId, mangaName);
+    }
+    else if (req.url.startsWith("/chooseChapter")){
+        console.log(`\n> REQ<: Req Recieved\t${req.socket.remoteAddress}\t${req.url}`);
+
+        const queryIndex = req.url.indexOf('?');
+        const queryString = queryIndex !== -1 ? req.url.slice(queryIndex + 1) : '';
+        const clientInput = new URLSearchParams(queryString);
+
+        const mangaName = clientInput.get("mangaName");
+        const chapterId = clientInput.get("chapterId");
+        const chapterNum = clientInput.get("chapterNum") - 1;
+        console.log({mangaName, chapterId, chapterNum});
+
+        getPages(res, chapterId, chapterNum, mangaName);
     }
 
     // after client completes oAuth & grants access
@@ -67,10 +110,10 @@ server.on("request", (req, res) => {
     }
 
     // client tries to request anything else
-    else respond(res, 404, `404 Request Doesn't Exist`);
+    else quickResponse(res, 404, `404 Request Doesn't Exist`);
 });
 
-function respond(res, statusCode, msg){
+function quickResponse(res, statusCode, msg){
     res.writeHead(statusCode, resHeader);
     res.end(`<h1>${msg}</h1>`);
 }
@@ -83,70 +126,145 @@ const optionsMangaDex = {
     headers: {"User-Agent": process.env.USER_AGENT},
 };
 
-function mangaLookup(res, mangaName, chapterNum){
+function mangaLookup(res, mangaName){
     console.log(`\n> GET: Looking up manga with name: \t${mangaName}`);
 
-    const endpoint = `https://api.mangadex.org/manga?title=${mangaName}&limit=1`;
+    const endpoint = `https://api.mangadex.org/manga?title=${mangaName}&limit=5&includes[]=cover_art`;
     https.request(endpoint, optionsMangaDex, (stream) => {
         buildJsonBody(stream, (mangaList) => {
             if (mangaList.result == 'error' || mangaList.data.length <= 0){
-                respond(res, 404, "404 Manga Not Found");
+                quickResponse(res, 404, "404 Manga Not Found");
                 console.log(mangaList);
                 return;
             }
             // mangaList.data.forEach(manga => console.log(manga.id));
 
-            getChapter(res, mangaList, chapterNum);
+            res.writeHead(200, resHeader);
+            const landingPage = fs.createReadStream("html/results.html");
+            landingPage.pipe(res, {end: false});
+            landingPage.on("end", () => {
+
+                res.write(`
+                    <form action='chooseManga' method='GET' id="form">
+                        <input type='hidden' name='mangaId' id='mangaId'>
+                        <input type='hidden' name='mangaName' id='mangaName'>
+                `);
+
+                mangaList.data.forEach(manga => {
+                    const mangaName = manga.attributes.title[Object.keys(manga.attributes.title)[0]];
+                    const temp = manga.id;
+                    // res.write(`<button type="submit" name="mangaId" value=${manga.id}><p>${mangaName}</p></button>`);
+                    res.write(`<button type="submit" class="formBtn" data-id=${manga.id} data-name="${mangaName}"><p>${mangaName}</p></button>`);
+
+                    if (manga.relationships[2].type == "cover_art"){
+                        const coverLink = manga.relationships[2].attributes.fileName;
+                        res.write(`<img src="https://uploads.mangadex.org/covers/${manga.id}/${coverLink}.256.jpg">`);
+                    }
+                    else {
+                        console.log("not found")
+                        res.write(`<img src="https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=">`);
+                    }
+                    
+                }); 
+                res.end(`
+                    </form>
+                    <script>
+                        document.getElementById('form').addEventListener('submit', function(event) {
+                            const button = event.submitter; 
+                            if (button && button.classList.contains('formBtn')) {
+                                const mangaId = button.dataset.id;
+                                const mangaName = button.dataset.name;
+                                document.getElementById('mangaId').value = mangaId;
+                                document.getElementById('mangaName').value = mangaName;
+                            }
+                        });
+                    </script>
+                `);
+
+            });
         });
     }).end();
 }
     
-function getChapter(res, mangaList, chapterNum){
-    const manga = mangaList.data[Object.keys(mangaList.data)[0]];
-    const mangaId = manga.id;
-    const title = manga.attributes.title[Object.keys(manga.attributes.title)[0]];
-
+function getChapter(res, mangaId, mangaName){
     process.stdout.write(`\n> GET: Fetching chapters of manga:\t`);
-    console.log({title, mangaId});
+    console.log({mangaName, mangaId});
 
     const endpoint = 
         `https://api.mangadex.org/manga/${mangaId}/feed?`
         + `translatedLanguage[]=en&` 
-        + `limit=1&`
-        + `offset=${chapterNum}&`
+        + `limit=10&`
+        + `offset=0&`
         + `order[chapter]=asc`;
     https.request(endpoint, optionsMangaDex, (stream) => {
         buildJsonBody(stream, (chapterList) => {
             if (chapterList.result == 'error' || chapterList.data.length == 0){
                 if (chapterList.data.length == 0 || chapterList.errors[0].status == 404){
-                    respond(res, 404, "404 Chapter Not Found");
+                    quickResponse(res, 404, "404 Chapter Not Found");
                 }
-                else respond(res, 400, "400 Request For Chapter Failed");
+                else quickResponse(res, 400, "400 Request For Chapter Failed");
                 console.log(chapterList);
                 return;
             }
             process.stdout.write("- ChapterList json metadata\t");
+
             const {limit, offset, total} = chapterList;
             console.log({limit, offset, total});
             chapterList.data.forEach(chap => console.log(`- Chapter ID:\t${chap.id}`));
+            // chapterList.data.forEach(chap => console.log(chap));
+           
+            res.writeHead(200, resHeader);
+            const landingPage = fs.createReadStream("html/results.html");
+            landingPage.pipe(res, {end: false});
+            landingPage.on("end", () => {
 
-            getPages(res, chapterList, chapterNum, title);
+                res.write(`
+                    <form action='chooseChapter' method='GET' id="form">
+                        <input type='hidden' name='chapterId' id='chapterId'>
+                        <input type='hidden' name='chapterNum' id='chapterNum'>
+                        <input type='hidden' name='mangaName' id='mangaName' value="${mangaName}">
+                `);
+
+                chapterList.data.forEach(chap => {
+                    const {volume, chapter, title} = chap.attributes;
+                    res.write(`
+                        <button type="submit" class="formBtn" data-cid=${chap.id} data-cnum=${chapter}>
+                            <p>Volume ${volume}, Ch. ${chapter}</p>
+                            <p>${title}</p>
+                        </button>
+                    `);
+                }); 
+                res.end(`
+                    </form>
+                    <script>
+                        document.getElementById('form').addEventListener('submit', function(event) {
+                            const button = event.submitter; 
+                            if (button && button.classList.contains('formBtn')) {
+                                const chapterId = button.dataset.cid;
+                                const chapterNum = button.dataset.cnum;
+                                document.getElementById('chapterId').value = chapterId;
+                                document.getElementById('chapterNum').value = chapterNum;
+                            }
+                        });
+                    </script>
+                `);
+
+            });
+
+            // getPages(res, chapterList, chapterNum, title);
         });
     }).end();
 }
 
-function getPages(res, chapterList, chapterNum, title){
-    const chapter = chapterList.data[0];
-    const chapterId = chapter.id;
-
+function getPages(res, chapterId, chapterNum, mangaName){
     console.log(`\n> GET: Fetching pages of chapter: \t${chapterId}`);
 
     const endpoint = `https://api.mangadex.org/at-home/server/${chapterId}`;
     https.request(endpoint, optionsMangaDex, (stream) => {
         buildJsonBody(stream, (pageList) => {
             if (pageList.result == 'error'){
-                if (pageList.errors[0].status == 404) respond(res, 404, "404 Chapter's Pages Not Found");
-                else respond(res, 400, "400 Request For Chapter's Pages Failed");
+                if (pageList.errors[0].status == 404) quickResponse(res, 404, "404 Chapter's Pages Not Found");
+                else quickResponse(res, 400, "400 Request For Chapter's Pages Failed");
                 console.log(pageList);
                 return;
             }
@@ -158,7 +276,7 @@ function getPages(res, chapterList, chapterNum, title){
             console.log(pageList.chapter.data);
 
             const state = crypto.randomBytes(20).toString("hex");
-            session.set(state, {pageList, chapterNum, title});
+            session.set(state, {pageList, chapterNum, mangaName});
             oAuthSignIn(res, state);
         });
     }).end();
@@ -204,7 +322,7 @@ function tokenExchange(res, code, state){
             process.stdout.write(`- RES<: Exchange Complete\t`);
             
             if (exchangeInfo.error){
-                respond(res, 400, `OAuth Token Exchange Failure`);
+                quickResponse(res, 400, `OAuth Token Exchange Failure`);
                 return;
             }
 
@@ -221,10 +339,10 @@ function tokenExchange(res, code, state){
 // Download & Upload API Calls ==============================
 
 function createFolder(res, token, state){
-    const {pageList, chapterNum, title} = session.get(state);
+    const {pageList, chapterNum, mangaName} = session.get(state);
 
     const body = JSON.stringify({
-        name: `${title}, ch. ${chapterNum + 1}`,
+        name: `${mangaName}, ch. ${chapterNum + 1}`,
         mimeType: "application/vnd.google-apps.folder",
         parents: ["root"]
     });
