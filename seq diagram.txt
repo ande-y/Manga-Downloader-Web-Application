@@ -1,0 +1,123 @@
+title Manga Downloader App Sequence Diagram
+
+participant Google Drive API
+participant Client (Drive Owner)
+participant Manga Downloader App 
+participant MangaDex API
+
+group Deliver Form 
+
+Client (Drive Owner) ->(1) Manga Downloader App: **Header** \nGET HTTP/2 //localhost:3000/
+
+Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] landing.html
+
+end
+
+// =========================
+
+group Form Submitted
+
+Client (Drive Owner) -[#red;2]>(1) Manga Downloader App: **Header** \nGET HTTP/2 //localhost:3000/sendReq// \n**URL Parameters** \n • mangaName \n • chapterNum
+
+end
+
+// =========================
+
+group Input Validation
+note over Manga Downloader App, MangaDex API #lightgray ;0: check if the manga, the chapters of that manga, \n& the pages of that chapter exists on MangaDex, \notherwise return a 404
+
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 //api.mangadex.org/manga// \n • User_Agent \n**URL Parameters** \n • title=${mangaName} \n • limit=1
+
+MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP2 200 \n**Body** \n[Json] manga information
+
+note over Manga Downloader App ;0: get the manga's id
+
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 //https://api.mangadex.org/manga// \n • User_Agent \n**URL Parameters** \n • title=${mangaName} \n • limit=1
+
+MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Json] chapters information
+
+note over Manga Downloader App ;0: get the chapter's id
+
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 \n//api.mangadex.org/at-home/server/${chapterId}// \n • User_Agent \n**URL Parameters** \n • translatedLanguage[]=en \n • limit=1 \n • offset=${chapterNum} \n • order[chapter]=asc//
+
+MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Json] chapter's pageList, \ncontaining \n • pageEndpoint \n • chapterHash \n • baseUrl 
+
+end
+
+note over Manga Downloader App ;0: state is generated, { pageList, chapterNum, title } is \nstored into a session map as key value pair with state
+
+// =========================
+
+group Google OAuth 2.0 
+note over Google Drive API, Manga Downloader App #lightgray ;0: client completes oAuth process to grant the App \nread, write, & delete permission on their google drive
+
+Manga Downloader App -[#red;2]>(1) Client (Drive Owner): **Header** \nHTTP/2 302 \n//accounts.google.com/o/oauth2/v2/auth// \n**URL Parameters** \n • client_id \n • redirect_uri="localhost:3000/callback" \n • response_type="code" \n • scope="https://www.googleapis.com/auth/drive" \n • state
+
+Client (Drive Owner) ->(1) Google Drive API: **Header** \nHTTP/2 302 \n//accounts.google.com/o/oauth2/v2/auth// \n**URL Parameters** \n • client_id \n • redirect_uri="localhost:3000/callback" \n • response_type="code" \n • scope="https://www.googleapis.com/auth/drive" \n • state
+
+group optional if already done
+
+Google Drive API ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] Login Portal
+
+Client (Drive Owner) ->(1) Google Drive API: Client User's Login Information \nGrants Permission to Drive 
+
+end
+
+Google Drive API ->(1) Client (Drive Owner): **Header** \nHTTP/2 302 //localhost:3000/callback// \n**URL Parameters** \n • state \n • iss \n • code \n • scope="https://www.googleapis.com/auth/drive"
+
+Client (Drive Owner) -[#orange;2]>(1) Manga Downloader App: **Header** \nHTTP/2 302 //localhost:3000/callback// \n**URL Parameters** \n • state \n • iss \n • code \n • scope="https://www.googleapis.com/auth/drive"
+
+group token exchange
+
+Manga Downloader App ->(1) Google Drive API: **Header**\nPOST HTTP/2 //https://oauth2.googleapis.com/token// \n • Content-Type: "application/x-www-form-urlencoded" \n**URL Parameters** \n • client_id=${client_id} \n • client_secret=${client_secret} \n • code=${code} \n • redirect_uri=//localhost:3000/callback// \n • grant_authorization="authorization_code"
+
+Google Drive API ->(1) Manga Downloader App: **Header** \nGET HTTP/2 //localhost:3000/callback// \n**URL Parameters** \n • access_token \n • expires_in \n • scope \n • token_type
+
+end
+
+end
+
+note over Manga Downloader App ;0: { pageList, chapterNum, title } is retreived \nfrom the session map using state
+
+// =========================
+
+group folder creation 
+note over Google Drive API, Manga Downloader App #lightgray ;0: the app preemptively creates a folder that \nwill be used to store all the manga pages
+
+Manga Downloader App ->(1) Google Drive API: **Header** \nPOST HTTP/2 \n//https://www.googleapis.com/drive/v3/files// \n • Authorization: access_token \n • Content-Type: "application/json" \n • Content-Length: Buffer.byteLength(body) \n**Body** \n • name: `${title}, ch. ${chapterNum}` \n • mimeType: "application/vnd.google-apps.folder" \n • parents: ["root"]
+
+
+Google Drive API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Json] folder_id
+
+end
+
+// =========================
+
+group page download & upload 
+note over Google Drive API, MangaDex API #lightgray ;0: manga page (jpg) is fetched from MangaDex, then uploaded to the google drive. For n pages, repeat n times
+
+group iterate though pageList
+note over Manga Downloader App, MangaDex API #lightgray ;0: implemented recursively, only when one page \ncompletes downloading, does the next page start. 
+
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2  \n//${baseUrl}/data/${chapterHash}/${pageEndpoint}// \n • User_Agent
+
+MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Binary] manga page jpg
+
+end
+
+note over Manga Downloader App ;0: Immediately start uploading the page to \ndrive when it finishes downloading
+
+Manga Downloader App ->(1) Google Drive API: **Header** \nPOST HTTP/2 \n//www.googleapis.com/upload/drive/v3/files?files?uploadType=multipart// \n • Authorization: access_token \n • Content-Type: `multipart/related; boundary=${boundary}` \n • Content-Length: body.size \n**Body** \n • [Metadata] name, mineType:"image/jpg", parent:folder_id \n • [Binary] manga page jpg
+
+Google Drive API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Json] success
+
+end
+
+// =========================
+
+group completion 
+note over Client (Drive Owner), Manga Downloader App #lightgray ;0: send client user to the google drive \nfolder with all the pages after the pages \nfinish downloading & uploading
+
+Manga Downloader App -[#orange;2]>(1) Client (Drive Owner): **Header** \nHTTP/2 302 \n//drive.google.com/drive/folders/${folder_id}// 
+
+end
