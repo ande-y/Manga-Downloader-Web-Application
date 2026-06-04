@@ -32,3 +32,25 @@ input {
     width: 45vw;
     min-width: 700px;
 }
+
+.mangaList {
+    display: grid; 
+    grid-template-columns: 1fr 1fr 1fr;
+}
+.mangaList img {
+    width: 200px;
+}
+
+.chapterList {
+    display: flex;
+    flex-direction: column;
+}
+.chapterList > button {
+    display: grid;
+    grid-template-columns: 1fr 2fr 12fr;
+    justify-content: end;
+}
+.chapterList p {
+    text-align: start;
+    min-width: 100px;
+}
