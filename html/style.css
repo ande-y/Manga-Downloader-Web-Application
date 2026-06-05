@@ -25,6 +25,18 @@ input {
     font-size: 1.2rem;
     line-height: 1.5rem;
 }
+button {
+    border: solid transparent 2px;
+    border-radius: 0px;
+    background-color: rgba(0, 0, 0, 0.1);
+
+    transition: all .2s ease-in-out;
+}
+button:hover {
+    border: solid black 2px;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
 #formGrid {
     display: grid;
     grid-template-columns: max-content auto;
@@ -36,6 +48,7 @@ input {
 .mangaList {
     display: grid; 
     grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
 }
 .mangaList img {
     width: 200px;
@@ -44,6 +57,7 @@ input {
 .chapterList {
     display: flex;
     flex-direction: column;
+    gap: 10px
 }
 .chapterList > button {
     display: grid;

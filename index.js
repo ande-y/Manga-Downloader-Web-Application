@@ -47,7 +47,7 @@ server.on("request", (req, res) => {
     }
 
     // client submits desired manga name
-    else if (req.url.startsWith("/searchManga")){
+    else if (req.url.startsWith("/mangaSelect")){
         console.log(`\n> REQ<: Req Recieved\t${req.socket.remoteAddress}\t${req.url}`);
 
         const queryIndex = req.url.indexOf('?');
@@ -55,7 +55,7 @@ server.on("request", (req, res) => {
         const clientInput = new URLSearchParams(queryString);
 
         const searchName = clientInput.get("name");
-        const paginationNum = clientInput.get("paginationNum");
+        const paginationNum = Number(clientInput.get("paginationNum"));
 
         if (searchName === ""){
             quickResponse(res, 400, "400 Invalid Inputs");
@@ -66,7 +66,7 @@ server.on("request", (req, res) => {
     }
 
     // client selects manga result 
-    else if (req.url.startsWith("/chooseManga")){
+    else if (req.url.startsWith("/chapterSelect")){
         console.log(`\n> REQ<: Req Recieved\t${req.socket.remoteAddress}\t${req.url}`);
 
         const queryIndex = req.url.indexOf('?');
@@ -82,7 +82,7 @@ server.on("request", (req, res) => {
     }
 
     // client selects manga's chapter
-    else if (req.url.startsWith("/chooseChapter")){
+    else if (req.url.startsWith("/finishSelection")){
         console.log(`\n> REQ<: Req Recieved\t${req.socket.remoteAddress}\t${req.url}`);
 
         const queryIndex = req.url.indexOf('?');
@@ -154,57 +154,60 @@ function mangaLookup(res, searchName, paginationNum){
             // console.log(mangaList);
 
             res.writeHead(200, resHeader);
-            const landingPage = fs.createReadStream("html/results.html");
-            landingPage.pipe(res, {end: false});
-            landingPage.on("end", () => {
-                res.write(`
-                    <h1>Select your Manga</h1>
-                    <form action='chooseManga' method='GET' id="formList" class="mangaList">
-                        <input type='hidden' name='mangaId' id='mangaId'>
-                        <input type='hidden' name='mangaName' id='mangaName'>
-                        <input type='hidden' name='paginationNum' id='paginationNum' value=0>
-                `);
-                mangaList.data.forEach(manga => {
-                    const mangaName = manga.attributes.title[Object.keys(manga.attributes.title)[0]];
-                    res.write(`<button type="submit" class="formBtn" data-id=${manga.id} data-name="${mangaName}"><p>${mangaName}</p>`);
-                    if (manga.relationships[2].type == "cover_art"){
-                        const coverLink = manga.relationships[2].attributes.fileName;
-                        res.write(`<img src="https://uploads.mangadex.org/covers/${manga.id}/${coverLink}.256.jpg">`);
-                    }
-                    else res.write(`<img src="https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=">`);
-                    res.write(`</button>`)
-                }); 
-                res.write(`
-                    </form>
-                    <form action="searchManga" method="GET" style="display: flex; justify-content: center;">
-                        <input type='hidden' name='name' value="${searchName}">
-                `);
-                if (paginationNum > 0) res.write(`<button type="submit" name="paginationNum" value=${paginationNum - 1}><p>Prev Page</p></button>`);
-                if ((paginationNum + 1) * paginationSize < total) res.write(`<button type="submit" name="paginationNum" value=${paginationNum + 1}><p>Next Page</p></button>`);
-                res.end(`
-                    </form>	<br><br><br><br><br>
-                    <script>
-                        document.getElementById('formList').addEventListener('submit', function(event) {
-                            const button = event.submitter; 
-                            if (button && button.classList.contains('formBtn')) {
-                                const mangaId = button.dataset.id;
-                                const mangaName = button.dataset.name;
-                                document.getElementById('mangaId').value = mangaId;
-                                document.getElementById('mangaName').value = mangaName;
-                            }
-                        });
-                    </script>
-                `);
-
+            const webPage = fs.createReadStream("html/results.html");
+            webPage.pipe(res, {end: false});
+            webPage.on("end", () => {
+                writeMangaListPage(res, searchName, paginationNum, paginationSize, mangaList, total );
             });
         });
     }).end();
 }
+
+function writeMangaListPage(res, searchName, paginationNum, paginationSize, mangaList, total){
+    res.write(`
+        <h1>Select your Manga</h1>
+        <form action='chapterSelect' method='GET' id="formList" class="mangaList">
+            <input type='hidden' name='mangaId' id='mangaId'>
+            <input type='hidden' name='mangaName' id='mangaName'>
+            <input type='hidden' name='paginationNum' id='paginationNum' value=0>
+    `);
+    mangaList.data.forEach(manga => {
+        const mangaName = manga.attributes.title[Object.keys(manga.attributes.title)[0]];
+        res.write(`<button type="submit" class="formBtn" data-id=${manga.id} data-name="${mangaName}"><p>${mangaName}</p>`);
+        if (manga.relationships[2].type == "cover_art"){
+            const coverLink = manga.relationships[2].attributes.fileName;
+            res.write(`<img src="https://uploads.mangadex.org/covers/${manga.id}/${coverLink}.256.jpg">`);
+        }
+        else res.write(`<img src="https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=">`);
+        res.write(`</button>`)
+    }); 
+    res.write(`
+        </form> <br>
+        <form action="mangaSelect" method="GET" style="display: flex; flex-direction: column; align-items: center;">
+            <input type='hidden' name='name' value="${searchName}">
+    `);
+    writePagination(res, paginationNum, paginationSize, total);
+    res.end(`
+        </form>	<br><br><br><br><br>
+        <script>
+            document.getElementById('formList').addEventListener('submit', function(event) {
+                const button = event.submitter; 
+                if (button && button.classList.contains('formBtn')) {
+                    const mangaId = button.dataset.id;
+                    const mangaName = button.dataset.name;
+                    document.getElementById('mangaId').value = mangaId;
+                    document.getElementById('mangaName').value = mangaName;
+                }
+            });
+        </script>
+    `);
+}
     
 function getChapter(res, mangaId, mangaName, paginationNum){
-    const paginationSize = 20;
     process.stdout.write(`\n> GET: Fetching chapters of manga:\t`);
     console.log({mangaName, mangaId});
+
+    const paginationSize = 20;
 
     const endpoint = 
         `https://api.mangadex.org/manga/${mangaId}/feed?`
@@ -233,48 +236,62 @@ function getChapter(res, mangaId, mangaName, paginationNum){
             const landingPage = fs.createReadStream("html/results.html");
             landingPage.pipe(res, {end: false});
             landingPage.on("end", () => {
-                res.write(`
-                    <h1>Select your Chapter</h1>
-                    <form action='chooseChapter' method='GET' id="formList" class="chapterList">
-                        <input type='hidden' name='chapterId' id='chapterId'>
-                        <input type='hidden' name='chapterNum' id='chapterNum'>
-                        <input type='hidden' name='mangaName' id='mangaName' value="${mangaName}">
-                        <input type='hidden' name='paginationNum' id='paginationNum' value=${paginationNum}>
-                `);
-                chapterList.data.forEach(chap => {
-                    const {volume, chapter, title} = chap.attributes;
-                    res.write(`
-                        <button type="submit" class="formBtn" data-cid=${chap.id} data-cnum=${chapter}>
-                             <p>Vol. ${volume}</p> <p>Ch. ${chapter}</p> <p>${title}</p>
-                        </button>
-                    `);
-                }); 
-                res.write(`
-                    </form>
-                    <form action="chooseManga" method="GET" style="display: flex; justify-content: center;">
-                        <input type='hidden' name='mangaId' id='mangaId' value=${mangaId}>
-                        <input type='hidden' name='mangaName' id='mangaName' value=${mangaName}>
-                `);
-                if (paginationNum > 0) res.write(`<button type="submit" name="paginationNum" value=${paginationNum - 1}><p>Prev Page</p></button>`);
-                if ((paginationNum + 1) * paginationSize < total) res.write(`<button type="submit" name="paginationNum" value=${paginationNum + 1}><p>Next Page</p></button>`);
-                res.end(`
-                    </form> <br><br><br><br><br>
-                    <script>
-                        document.getElementById('formList').addEventListener('submit', function(event) {
-                            const button = event.submitter; 
-                            if (button && button.classList.contains('formBtn')) {
-                                const chapterId = button.dataset.cid;
-                                const chapterNum = button.dataset.cnum;
-                                document.getElementById('chapterId').value = chapterId;
-                                document.getElementById('chapterNum').value = chapterNum;
-                            }
-                        });
-                    </script>
-                `);
+                writeChapterListPage(res, mangaId, mangaName, paginationNum, paginationSize, chapterList, total);
             });
-
         });
     }).end();
+}
+
+function writeChapterListPage(res, mangaId, mangaName, paginationNum, paginationSize, chapterList, total){
+    res.write(`
+        <h1>Select your Chapter</h1>
+        <form action='finishSelection' method='GET' id="formList" class="chapterList">
+            <input type='hidden' name='chapterId' id='chapterId'>
+            <input type='hidden' name='chapterNum' id='chapterNum'>
+            <input type='hidden' name='mangaName' id='mangaName' value="${mangaName}">
+            <input type='hidden' name='paginationNum' id='paginationNum' value=${paginationNum}>
+    `);
+    chapterList.data.forEach(chap => {
+        const {volume, chapter, title} = chap.attributes;
+        res.write(`
+            <button type="submit" class="formBtn" data-cid=${chap.id} data-cnum=${chapter}>
+                    <p>Vol. ${volume}</p> <p>Ch. ${chapter}</p> <p>${title}</p>
+            </button>
+        `);
+    }); 
+    res.write(`
+        </form> <br>
+        <form action="chapterSelect" method="GET" style="display: flex; flex-direction: column; align-items: center;">
+            <input type='hidden' name='mangaId' id='mangaId' value=${mangaId}>
+            <input type='hidden' name='mangaName' id='mangaName' value=${mangaName}>
+    `);
+    writePagination(res, paginationNum, paginationSize, total);
+    res.end(`
+        </form> <br><br><br><br><br>
+        <script>
+            document.getElementById('formList').addEventListener('submit', function(event) {
+                const button = event.submitter; 
+                if (button && button.classList.contains('formBtn')) {
+                    const chapterId = button.dataset.cid;
+                    const chapterNum = button.dataset.cnum;
+                    document.getElementById('chapterId').value = chapterId;
+                    document.getElementById('chapterNum').value = chapterNum;
+                }
+            });
+        </script>
+    `);
+}
+
+function writePagination(res, paginationNum, paginationSize, total){
+    let totalPages = Math.floor(total / paginationSize);
+    totalPages = (total % paginationSize == 0) ? totalPages : totalPages + 1;
+    res.write(`
+            <p>Page ${paginationNum + 1}/${totalPages}</p>
+            <div style="display: flex; justify-content: center; gap: 10px;">
+    `);
+    if (paginationNum > 0) res.write(`<button type="submit" name="paginationNum" value=${paginationNum - 1}><p>Prev Page</p></button>`);
+    if (paginationNum + 1 < totalPages) res.write(`<button type="submit" name="paginationNum" value=${paginationNum + 1}><p>Next Page</p></button>`);
+    res.write(`</div>`);
 }
 
 function getPages(res, chapterId, chapterNum, mangaName){
