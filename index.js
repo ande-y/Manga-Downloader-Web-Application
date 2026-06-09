@@ -25,9 +25,11 @@ server.on("request", (req, res) => {
     if (req.url === "/"){
         console.log(`\n> REQ<: Landing Page\t${req.socket.remoteAddress}\t${req.url}`);
 
-        res.writeHead(200, resHeader);
-        const landingPage = fs.createReadStream("html/landing.html");
-        landingPage.pipe(res);
+        // res.writeHead(200, resHeader);
+        // const landingPage = fs.createReadStream("html/landing.html");
+        // landingPage.pipe(res);
+
+        writePage(res, "landing.html");
     }
 
     // browser requests stylesheet
@@ -115,7 +117,8 @@ server.on("request", (req, res) => {
     }
 
     // client tries to request anything else
-    else quickResponse(res, 404, `404 Request Doesn't Exist`);
+    // else quickResponse(res, 404, `404 Request Doesn't Exist`);
+    else writePage(res, "request404.html");
 });
 
 function quickResponse(res, statusCode, msg){
@@ -123,6 +126,31 @@ function quickResponse(res, statusCode, msg){
     res.end(`<h1>${msg}</h1>`);
 }
 
+function writePage(res, pageContent){
+    res.writeHead(200, resHeader);
+    const pageHead = fs.createReadStream("html/header.html");
+    pageHead.pipe(res, {end: false});
+    pageHead.on("end", () => {
+        const pageMain = fs.createReadStream(`html/${pageContent}`);
+        pageMain.pipe(res, {end: false});
+        pageMain.on("end", () => {
+            const pageFoot = fs.createReadStream("html/footer.html");
+            pageFoot.pipe(res);
+        });
+    });
+}
+
+function writePageManually(res, callback, cbParams){
+    res.writeHead(200, resHeader);
+    const pageHead = fs.createReadStream("html/header.html");
+    pageHead.pipe(res, {end: false});
+
+    pageHead.on("end", () => {
+        callback(res, cbParams);
+        const pageFoot = fs.createReadStream("html/footer.html");
+        pageFoot.pipe(res);
+    });
+}
 
 // MangaDex Lookup API calls ============================== 
 
@@ -144,7 +172,7 @@ function mangaLookup(res, searchName, paginationNum){
     https.request(endpoint, optionsMangaDex, (stream) => {
         buildJsonBody(stream, (mangaList) => {
             if (mangaList.result == 'error' || mangaList.data.length <= 0){
-                quickResponse(res, 404, "404 Manga Not Found");
+                writePage(res, "manga404.html");
                 console.log(mangaList);
                 return;
             }
@@ -153,18 +181,24 @@ function mangaLookup(res, searchName, paginationNum){
             // mangaList.data.forEach(manga => console.log(manga.id));
             // console.log(mangaList);
 
-            res.writeHead(200, resHeader);
-            const webPage = fs.createReadStream("html/results.html");
-            webPage.pipe(res, {end: false});
-            webPage.on("end", () => {
-                writeMangaListPage(res, searchName, paginationNum, paginationSize, mangaList, total );
-            });
+            // res.writeHead(200, resHeader);
+            // const webPage = fs.createReadStream("html/results.html");
+            // webPage.pipe(res, {end: false});
+            // webPage.on("end", () => {
+            //     writeMangaListPage(res, searchName, paginationNum, paginationSize, mangaList, total );
+            // });
+
+            writePageManually(res, writeMangaListPage, {searchName, paginationNum, paginationSize, mangaList, total})
+
         });
     }).end();
 }
 
-function writeMangaListPage(res, searchName, paginationNum, paginationSize, mangaList, total){
+function writeMangaListPage(res, params){
+    const {searchName, paginationNum, paginationSize, mangaList, total} = params;
+
     res.write(`
+        <main>
         <h1>Select your Manga</h1>
         <form action='chapterSelect' method='GET' id="formList" class="mangaList">
             <input type='hidden' name='mangaId' id='mangaId'>
@@ -187,7 +221,8 @@ function writeMangaListPage(res, searchName, paginationNum, paginationSize, mang
             <input type='hidden' name='name' value="${searchName}">
     `);
     writePagination(res, paginationNum, paginationSize, total);
-    res.end(`
+    // res.end(`
+    res.write(`
         </form>	<br><br><br><br><br>
         <script>
             document.getElementById('formList').addEventListener('submit', function(event) {
@@ -200,6 +235,7 @@ function writeMangaListPage(res, searchName, paginationNum, paginationSize, mang
                 }
             });
         </script>
+        </main>
     `);
 }
     
@@ -219,7 +255,7 @@ function getChapter(res, mangaId, mangaName, paginationNum){
         buildJsonBody(stream, (chapterList) => {
             if (chapterList.result == 'error' || chapterList.data.length == 0){
                 if (chapterList.data.length == 0 || chapterList.errors[0].status == 404){
-                    quickResponse(res, 404, "404 Chapter Not Found");
+                    writePage(res, "chapter404.html");
                 }
                 else quickResponse(res, 400, "400 Request For Chapter Failed");
                 console.log(chapterList);
@@ -232,18 +268,23 @@ function getChapter(res, mangaId, mangaName, paginationNum){
             chapterList.data.forEach(chap => console.log(`- Chapter ID:\t${chap.id}`));
             // chapterList.data.forEach(chap => console.log(chap));
            
-            res.writeHead(200, resHeader);
-            const landingPage = fs.createReadStream("html/results.html");
-            landingPage.pipe(res, {end: false});
-            landingPage.on("end", () => {
-                writeChapterListPage(res, mangaId, mangaName, paginationNum, paginationSize, chapterList, total);
-            });
+            // res.writeHead(200, resHeader);
+            // const landingPage = fs.createReadStream("html/results.html");
+            // landingPage.pipe(res, {end: false});
+            // landingPage.on("end", () => {
+            //     writeChapterListPage(res, mangaId, mangaName, paginationNum, paginationSize, chapterList, total);
+            // });
+
+            writePageManually(res, writeChapterListPage, {mangaId, mangaName, paginationNum, paginationSize, chapterList, total});
         });
     }).end();
 }
 
-function writeChapterListPage(res, mangaId, mangaName, paginationNum, paginationSize, chapterList, total){
+function writeChapterListPage(res, params){
+    const {mangaId, mangaName, paginationNum, paginationSize, chapterList, total} = params;
+    
     res.write(`
+        <main>
         <h1>Select your Chapter</h1>
         <form action='finishSelection' method='GET' id="formList" class="chapterList">
             <input type='hidden' name='chapterId' id='chapterId'>
@@ -266,7 +307,8 @@ function writeChapterListPage(res, mangaId, mangaName, paginationNum, pagination
             <input type='hidden' name='mangaName' id='mangaName' value=${mangaName}>
     `);
     writePagination(res, paginationNum, paginationSize, total);
-    res.end(`
+    // res.end(`
+    res.write(`
         </form> <br><br><br><br><br>
         <script>
             document.getElementById('formList').addEventListener('submit', function(event) {
@@ -279,6 +321,7 @@ function writeChapterListPage(res, mangaId, mangaName, paginationNum, pagination
                 }
             });
         </script>
+        </main>
     `);
 }
 
