@@ -4,15 +4,25 @@ html {
 
 body {
     margin: 0px;
+    min-height: 100dvh; 
+    display: flex;
+    flex-direction: column;
 }
 
-header, footer {
+header {
     width: 100%;
     background-color: black;
     padding: 50px 0px;
 }
+footer {
+    flex: 1;
+
+    width: 100%;
+    background-color: black;
+    padding: 50px 0px 20px 0px;
+}
+
 header > div, footer > div {
-    /* border: solid red 3px; */
     width: 60%;
     margin: auto;
 }
@@ -21,7 +31,6 @@ main {
     width: 60%;
     margin: 50px auto;
 }
-
 
 
 /* GENERIC ELTS =================================== */
@@ -39,12 +48,6 @@ p {
     font-size: 1.3rem;
     line-height: 1.6rem;
 }
-p.small {
-    color: white;
-    margin-top: 9px;
-    font-size: 1.2rem; 
-    line-height: 1.4rem;
-}
 input {
     border: solid black 2px;
     padding: 3px 5px 0px 5px;
@@ -55,15 +58,18 @@ input {
 button {
     border: solid transparent 2px;
     border-radius: 0px;
-    background-color: rgba(0, 0, 0, 0.1);
+    border: solid rgba(255, 255, 255, 0.3) 3px;
+    background-color: rgba(0, 0, 0, 0.2);
 
     transition: all .2s ease-in-out;
 }
 button:hover {
-    border: solid black 2px;
-    background-color: rgba(0, 0, 0, 0.2);
+    border: solid rgb(255, 255, 255) 3px;
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
+
+/* ASSIGNED ELTS =================================== */
 
 .listDiv {
     display: grid; 
@@ -80,12 +86,19 @@ button:hover {
 }
 
 .mangaList {
-    display: grid; 
-    grid-template-columns: 1fr 1fr 1fr;
+    display: flex; 
+    flex-direction: column;
     gap: 10px;
 }
 .mangaList img {
-    width: 200px;
+    width: 150px;
+    height: min-content;
+}
+.mangaList button {
+    padding: 20px;
+}
+.mangaList p {
+    text-align: start;
 }
 
 .chapterList {
