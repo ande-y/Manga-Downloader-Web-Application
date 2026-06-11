@@ -24,11 +24,6 @@ server.on("request", (req, res) => {
     // client enters http://localhost:3000
     if (req.url === "/"){
         console.log(`\n> REQ<: Landing Page\t${req.socket.remoteAddress}\t${req.url}`);
-
-        // res.writeHead(200, resHeader);
-        // const landingPage = fs.createReadStream("html/landing.html");
-        // landingPage.pipe(res);
-
         writePage(res, "landing.html");
     }
 
@@ -149,6 +144,7 @@ function writePageManually(res, callback, cbParams){
     });
 }
 
+
 // MangaDex Lookup API calls ============================== 
 
 const optionsMangaDex = {
@@ -183,58 +179,6 @@ function mangaLookup(res, searchName, paginationNum){
     }).end();
 }
 
-function writeMangaListPage(res, params){
-    const {searchName, paginationNum, paginationSize, mangaList, total} = params;
-
-    res.write(`
-        <main>
-        <h1>Select your Manga</h1>
-        <br>
-        <form action='chapterSelect' method='GET' id="formList" class="mangaList">
-            <input type='hidden' name='paginationNum' id='paginationNum' value=0>
-    `);
-
-    mangaList.data.forEach(manga => {
-        const {mangaName, author, artist, mangaDesc, coverLink} = getMangaInfo(manga);
-
-        res.write(`
-            <button type="submit" class="formBtn" name="mangaId" value=${manga.id}>
-                <div style="display: flex; gap: 20px;">
-        `);
-        if (coverLink !== undefined) res.write(`<img src="https://uploads.mangadex.org/covers/${manga.id}/${coverLink}.256.jpg">`);
-        else res.write(`<img src="https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=">`);
-        res.write(`
-                    <div style="display: flex; flex-direction: column; gap: 10px;">
-                        <b><p>${mangaName}</p></b>
-                        <p>By ${author}${artist}</p>
-                        <p>${mangaDesc}</p>
-                    </div>
-                </div>
-            </button>
-        `);
-    }); 
-    
-    res.write(`
-        </form> <br>
-        <form action="mangaSelect" method="GET" style="display: flex; flex-direction: column; align-items: center;">
-            <input type='hidden' name='name' value="${searchName}">
-    `);
-    writePagination(res, paginationNum, paginationSize, total);
-    res.write(`
-        </form>
-        <script>
-            document.getElementById('formList').addEventListener('submit', function(event) {
-                const button = event.submitter; 
-                if (button && button.classList.contains('formBtn')) {
-                    document.getElementById('mangaId').value = button.dataset.id;
-                    document.getElementById('mangaName').value = button.dataset.name;
-                }
-            });
-        </script>
-        </main>
-    `);
-}
-    
 function getChapter(res, mangaId, paginationNum){
     process.stdout.write(`\n> GET: Fetching chapters of manga: ${mangaId}\t`);
 
@@ -280,6 +224,106 @@ function getChapter(res, mangaId, paginationNum){
     }).end();
 }
 
+function getMangaInfo(manga){
+    const mangaName = manga.attributes.title[Object.keys(manga.attributes.title)[0]];
+
+    let author, artist, coverLink;
+    manga.relationships.forEach(i => {
+        // console.log(i);
+        if (i.type === "author") author = i.attributes.name;
+        if (i.type === "artist") artist = i.attributes.name;
+        if (i.type === "cover_art") coverLink = i.attributes.fileName;
+    });
+    if (author === undefined) author = "Unknown";
+    artist = (artist === undefined) ? "" : `, illustrated by ${artist}`;
+
+    let mangaDesc = manga.attributes.description.en;
+    if (mangaDesc === undefined || mangaDesc === "") mangaDesc = "[English Description Not Found]"; 
+
+    return {mangaName, author, artist, mangaDesc, coverLink};
+}
+
+function getPages(res, chapterId, chapterNum, mangaName){
+    console.log(`\n> GET: Fetching pages of chapter: \t${chapterId}`);
+
+    const endpoint = `https://api.mangadex.org/at-home/server/${chapterId}`;
+    https.request(endpoint, optionsMangaDex, (stream) => {
+        buildJsonBody(stream, (pageList) => {
+            if (pageList.result == 'error'){
+                if (pageList.errors[0].status == 404) writePage(res, "pages404.html");
+                writePage(res, "fail400.html");
+                console.log(pageList);
+                return;
+            }
+            process.stdout.write("- RES<: PageList json metadata:\t");
+            const baseUrl = pageList.baseUrl;
+            const hash = pageList.chapter.hash;
+            const NumberOfPages = pageList.chapter.data.length;
+            console.log({baseUrl, hash, NumberOfPages});
+            console.log(pageList.chapter.data);
+
+            const state = crypto.randomBytes(20).toString("hex");
+            session.set(state, {pageList, chapterNum, mangaName});
+            oAuthSignIn(res, state);
+        });
+    }).end();
+}
+
+
+// Manual Webpage Contruction
+
+function writeMangaListPage(res, params){
+    const {searchName, paginationNum, paginationSize, mangaList, total} = params;
+
+    res.write(`
+        <main>
+        <h1>Select your Manga</h1>
+        <br>
+        <form action='chapterSelect' method='GET' id="formList" class="mangaList">
+            <input type='hidden' name='paginationNum' id='paginationNum' value=0>
+    `);
+
+    mangaList.data.forEach(manga => {
+        const {mangaName, author, artist, mangaDesc, coverLink} = getMangaInfo(manga);
+
+        res.write(`
+            <button type="submit" class="formBtn" name="mangaId" value=${manga.id}>
+                <div style="display: flex; gap: 20px;">
+        `);
+        if (coverLink !== undefined) res.write(`<img src="https://uploads.mangadex.org/covers/${manga.id}/${coverLink}.256.jpg">`);
+        else res.write(`<img src="https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=">`);
+        res.write(`
+                    <div class="mangaInfo">
+                        <p><b>${mangaName}</b><br>By ${author}${artist}</p>
+                        <hr style="width: 100%;">
+                        <p style="overflow-x: auto;">${mangaDesc}</p>
+                    </div>
+                </div>
+            </button>
+        `);
+    }); 
+    
+    res.write(`
+        </form> <br>
+        <form action="mangaSelect" method="GET" style="display: flex; flex-direction: column; align-items: center;">
+            <input type='hidden' name='name' value="${searchName}">
+    `);
+    writePagination(res, paginationNum, paginationSize, total);
+    res.write(`
+        </form>
+        <script>
+            document.getElementById('formList').addEventListener('submit', function(event) {
+                const button = event.submitter; 
+                if (button && button.classList.contains('formBtn')) {
+                    document.getElementById('mangaId').value = button.dataset.id;
+                    document.getElementById('mangaName').value = button.dataset.name;
+                }
+            });
+        </script>
+        </main>
+    `);
+}
+    
 function writeChapterListPage(res, params){
     const {mangaId, mangaName, author, artist, mangaDesc, coverLink, paginationNum, paginationSize, chapterList, total} = params;
     
@@ -290,10 +334,11 @@ function writeChapterListPage(res, params){
     if (coverLink !== undefined) res.write(`<img style="height: 300px" src="https://uploads.mangadex.org/covers/${mangaId}/${coverLink}.256.jpg">`);
     else res.write(`<img style="height: 300px" src="https://media.istockphoto.com/id/1147544807/vector/thumbnail-image-vector-graphic.jpg?s=612x612&w=0&k=20&c=rnCKVbdxqkjlcs3xH87-9gocETqpspHFXu5dIGB4wuM=">`);
     res.write(`
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <b><p>${mangaName}</p></b>
-                <p>By ${author}${artist}</p>
-                <p>${mangaDesc}</p>
+            <div style="display: flex; flex-direction: column; gap: 10px; width: 100%">
+                <h1>${mangaName}</h1>
+                <p style="margin: 0px;">By ${author}${artist}</p>
+                <hr style="width: 100%;">
+                <p style="max-height: 300px; overflow-x: auto;">${mangaDesc}</p>
             </div>
         </div>
         <br><br>
@@ -310,13 +355,14 @@ function writeChapterListPage(res, params){
     `);
     chapterList.data.forEach(chap => {
         let {volume, chapter, title} = chap.attributes;
+        // console.log(chap.attributes);
         if (volume === null) volume = "[n/a]";
         if (chapter === null) chapter = "[n/a]";
         if (title === null) title = "[Title Not Found]"
 
         res.write(`
             <button type="submit" class="formBtn" data-cid=${chap.id} data-cnum=${chapter}>
-                    <p>Vol. ${volume}</p> <p>Ch. ${chapter}</p> <p>${title}</p>
+                <p>Vol. ${volume}</p> <p>Ch. ${chapter}</p> <p>${title}</p>
             </button>
         `);
     }); 
@@ -355,51 +401,6 @@ function writePagination(res, paginationNum, paginationSize, total){
     if (paginationNum > 0) res.write(`<button type="submit" name="paginationNum" value=${paginationNum - 1}><p>Prev Page</p></button>`);
     if (paginationNum + 1 < totalPages) res.write(`<button type="submit" name="paginationNum" value=${paginationNum + 1}><p>Next Page</p></button>`);
     res.write(`</div>`);
-}
-
-function getMangaInfo(manga){
-    const mangaName = manga.attributes.title[Object.keys(manga.attributes.title)[0]];
-
-    let author, artist, coverLink;
-    manga.relationships.forEach(i => {
-        // console.log(i);
-        if (i.type === "author") author = i.attributes.name;
-        if (i.type === "artist") artist = i.attributes.name;
-        if (i.type === "cover_art") coverLink = i.attributes.fileName;
-    });
-    if (author === undefined) author = "Unknown";
-    artist = (artist === undefined) ? "" : `, illustrated by ${artist}`;
-
-    let mangaDesc = manga.attributes.description.en;
-    if (mangaDesc === undefined || mangaDesc === "") mangaDesc = "[English Description Not Found]"; 
-
-    return {mangaName, author, artist, mangaDesc, coverLink};
-}
-
-function getPages(res, chapterId, chapterNum, mangaName){
-    console.log(`\n> GET: Fetching pages of chapter: \t${chapterId}`);
-
-    const endpoint = `https://api.mangadex.org/at-home/server/${chapterId}`;
-    https.request(endpoint, optionsMangaDex, (stream) => {
-        buildJsonBody(stream, (pageList) => {
-            if (pageList.result == 'error'){
-                if (pageList.errors[0].status == 404) writePage(res, "pages404.html");
-                writePage(res, "fail400.html");
-                console.log(pageList);
-                return;
-            }
-            process.stdout.write("- RES<: PageList json metadata:\t");
-            const baseUrl = pageList.baseUrl;
-            const hash = pageList.chapter.hash;
-            const size = pageList.chapter.data.length;
-            console.log({baseUrl, hash, "NumberOfPages":size});
-            console.log(pageList.chapter.data);
-
-            const state = crypto.randomBytes(20).toString("hex");
-            session.set(state, {pageList, chapterNum, mangaName});
-            oAuthSignIn(res, state);
-        });
-    }).end();
 }
 
 
@@ -498,7 +499,6 @@ function downloadPages(res, token, pageList, folderId, pageNum, totalPages){
     https.request(endpoint, optionsMangaDex, (stream) => {
         buildBinaryBody(stream, (body) => {
             const media = Buffer.from(body);
-            // fs.writeFileSync(`${pageNum}.jpg`, media);
 
             console.log(`> GET: mangadex -> p.${pageNum + 1}`);
 

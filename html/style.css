@@ -47,6 +47,8 @@ p {
     font-family: Overpass;
     font-size: 1.3rem;
     line-height: 1.6rem;
+
+    overflow-wrap: anywhere; 
 }
 input {
     border: solid black 2px;
@@ -96,9 +98,20 @@ button:hover {
 }
 .mangaList button {
     padding: 20px;
+    overflow: hidden;
 }
 .mangaList p {
     text-align: start;
+    /* border: solid red 2px; */
+}
+
+.mangaInfo {
+    display: flex; 
+    flex-direction: column; 
+    gap: 10px;
+    width: 100%;
+    max-height: 300px;
+    /* overflow-x: auto */
 }
 
 .chapterList {
