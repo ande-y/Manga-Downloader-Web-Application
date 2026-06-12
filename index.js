@@ -27,6 +27,19 @@ server.on("request", (req, res) => {
         writePage(res, "landing.html");
     }
 
+    // browser requests site icon
+    else if (req.url.startsWith("/favicon")){
+        console.log(`\n> REQ<: Favicon\t${req.socket.remoteAddress}\t${req.url}`);
+
+        const resHeaderImage = {
+            "Content-Type": "image/svg+xml",
+            "Transfer-Encoding": "chunked" 
+        };
+        res.writeHead(200, resHeaderImage);
+        const icon = fs.createReadStream("icon.svg");
+        icon.pipe(res);
+    }
+
     // browser requests stylesheet
     else if (req.url.startsWith("/style")){
         console.log(`\n> REQ<: Stylesheet\t${req.socket.remoteAddress}\t${req.url}`);
@@ -58,6 +71,10 @@ server.on("request", (req, res) => {
             writePage(res, "fail400.html");
             return;
         }
+        if (paginationNum < 0){
+            writePage(res, "manga404.html");
+            return;
+        }
 
         mangaLookup(res, searchName, paginationNum);
     }
@@ -72,6 +89,11 @@ server.on("request", (req, res) => {
 
         const mangaId = clientInput.get("mangaId");
         const paginationNum = Number(clientInput.get("paginationNum"));
+
+        if (paginationNum < 0){
+            writePage(res, "chapter404.html");
+            return;
+        }
 
         getChapter(res, mangaId, paginationNum);
     }
@@ -113,11 +135,6 @@ server.on("request", (req, res) => {
     else writePage(res, "request404.html");
 });
 
-function quickResponse(res, statusCode, msg){
-    res.writeHead(statusCode, resHeader);
-    res.end(`<h1>${msg}</h1>`);
-}
-
 function writePage(res, pageContent){
     res.writeHead(200, resHeader);
     const pageHead = fs.createReadStream("html/header.html");
@@ -157,6 +174,12 @@ function mangaLookup(res, searchName, paginationNum){
 
     const paginationSize = 10;
 
+    // mangaDex doesnt accept offset greater than 10k
+    if ((paginationNum + 1) * paginationSize > 10000){
+        writePage(res, "manga404.html");
+        return;
+    }
+
     const endpoint = `https://api.mangadex.org/manga?` + 
         `title=${searchName}&` + 
         `limit=${paginationSize}&` + 
@@ -184,8 +207,7 @@ function getChapter(res, mangaId, paginationNum){
 
     const paginationSize = 20;
 
-    const endpoint = 
-        `https://api.mangadex.org/manga/${mangaId}/feed?`
+    const endpoint = `https://api.mangadex.org/manga/${mangaId}/feed?`
         + `translatedLanguage[]=en&` 
         + `limit=${paginationSize}&`
         + `offset=${paginationNum * paginationSize}&`
@@ -206,8 +228,7 @@ function getChapter(res, mangaId, paginationNum){
             console.log({limit, offset, total});
             chapterList.data.forEach(chap => console.log(`- Chapter ID:\t${chap.id}`));
 
-            const endpoint = 
-                `https://api.mangadex.org/manga/${mangaId}?` + 
+            const endpoint = `https://api.mangadex.org/manga/${mangaId}?` + 
                 `includes[]=author&` + 
                 `includes[]=artist&` + 
                 `includes[]=cover_art`;
@@ -399,6 +420,7 @@ function writePagination(res, paginationNum, paginationSize, total){
         <div style="display: flex; justify-content: center; gap: 10px;">
     `);
     if (paginationNum > 0) res.write(`<button type="submit" name="paginationNum" value=${paginationNum - 1}><p>Prev Page</p></button>`);
+    // res.write(`<input name="paginationNum" type="number" placeholder="${paginationNum + 1}" style="max-width: 50px">`);
     if (paginationNum + 1 < totalPages) res.write(`<button type="submit" name="paginationNum" value=${paginationNum + 1}><p>Next Page</p></button>`);
     res.write(`</div>`);
 }

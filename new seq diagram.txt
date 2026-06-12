@@ -9,7 +9,7 @@ group Deliver Form
 
 Client (Drive Owner) ->(1) Manga Downloader App: **Header** \nGET HTTP/2 //localhost:3000/
 
-Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] landing.html
+Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] header.html \n[HTML] landing.html \n[HTML] footer.html
 
 end
 
@@ -18,19 +18,19 @@ end
 group Search for Manga
 
 group Form Submitted
-Client (Drive Owner) ->(1) Manga Downloader App: **Header** \nGET HTTP/2 //localhost:3000/searchManga// \n**URL Parameters** \n • mangaName \n
+Client (Drive Owner) ->(1) Manga Downloader App: **Header** \nGET HTTP/2 //localhost:3000/searchManga// \n**URL Parameters** \n • mangaName
 end
 
 group Input Validation
-Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 //api.mangadex.org/manga// \n • User_Agent \n**URL Parameters** \n • title=${mangaName} \n • limit=1
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 //api.mangadex.org/manga// \n • User_Agent \n**URL Parameters** \n • title=${mangaName} \n • limit=10 \n • offset=${paginationNum * paginationSize} \n • includes[]=author \n • includes[]=artist \n • includes[]=cover_art
 
 MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP2 200 \n**Body** \n[Json] manga information
 
 end 
 
-note over Manga Downloader App ;0: build list of mangas in HTML
+note over Manga Downloader App ;0: extract mangas' id, title, author, artist, description, \ncover art; then build list of mangas in HTML
 
-Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] mangaList.html
+Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] header.html \n[HTML] list of mangas \n[HTML] footer.html
 
 end
 
@@ -43,13 +43,24 @@ Client (Drive Owner) ->(1) Manga Downloader App: **Header** \nGET HTTP/2 //local
 end
 
 group Input Validation
-Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 //https://api.mangadex.org/manga// \n • User_Agent \n**URL Parameters** \n • title=${mangaName} \n • limit=1
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 \n//api.mangadex.org/manga/${mangaId}/feed// \n • User_Agent \n**URL Parameters** \n • title=${mangaName} \n • limit=20 \n • offset=${paginationNum * paginationSize} \n • order[chapter]=asc
 
 MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Json] chapters information
 
 end
 
-Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] chapterList.html
+note over Manga Downloader App ;0: extract chapters' id, verify that there are chapters 
+
+group Get Manga's Details Again
+Manga Downloader App ->(1) MangaDex API: **Header** \nGET HTTP2 \n//api.mangadex.org/manga/${mangaId}// \n • User_Agent \n**URL Parameters** \n • includes[]=author \n • includes[]=artist \n • includes[]=cover_art
+
+MangaDex API ->(1) Manga Downloader App: **Header** \nHTTP/2 200 \n**Body** \n[Json] chapters information
+
+end
+
+note over Manga Downloader App ;0: extract mangas' id, title, author, artist, description, cover \nart; then build list of the manga's chapters in HTML
+
+Manga Downloader App ->(1) Client (Drive Owner): **Header** \nHTTP/2 200 \n**Body** \n[HTML] header.html \n[HTML] manga's details \n[HTML] list of chapter \n[HTML] footer.html
 
 end
 
